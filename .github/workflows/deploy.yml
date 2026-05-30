@@ -1,0 +1,96 @@
+name: Deploy
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+
+      - name: Run checks
+        run: |
+          python -m ruff check .
+          python -m pytest
+
+      - name: Validate Docker Compose
+        run: |
+          set -euo pipefail
+          cp .env.example .env
+          docker compose config >/dev/null
+          rm .env
+
+      - name: Create release archive
+        run: |
+          set -euo pipefail
+          mkdir -p build
+          git archive --format=tar.gz --output=build/release.tar.gz "$GITHUB_SHA"
+
+      - name: Configure SSH
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          test -n "$VPS_HOST"
+          test -n "$VPS_SSH_KEY"
+          mkdir -p ~/.ssh
+          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -p "${VPS_PORT:-22}" "$VPS_HOST" >> ~/.ssh/known_hosts
+
+      - name: Upload and deploy
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+          RELEASE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          test -n "$VPS_HOST"
+          test -n "$VPS_USER"
+          test -n "$DEPLOY_PATH"
+          SSH_PORT="${VPS_PORT:-22}"
+          RELEASE_DIR="$DEPLOY_PATH/releases/$RELEASE_SHA"
+
+          ssh -i ~/.ssh/deploy_key -p "$SSH_PORT" "$VPS_USER@$VPS_HOST" \
+            "mkdir -p '$DEPLOY_PATH/releases' '$DEPLOY_PATH/shared' '$RELEASE_DIR'"
+
+          scp -i ~/.ssh/deploy_key -P "$SSH_PORT" build/release.tar.gz \
+            "$VPS_USER@$VPS_HOST:$RELEASE_DIR/release.tar.gz"
+
+          ssh -i ~/.ssh/deploy_key -p "$SSH_PORT" "$VPS_USER@$VPS_HOST" "bash -s" <<EOF
+          set -euo pipefail
+          DEPLOY_PATH='$DEPLOY_PATH'
+          RELEASE_SHA='$RELEASE_SHA'
+          RELEASE_DIR="\$DEPLOY_PATH/releases/\$RELEASE_SHA"
+          tar -xzf "\$RELEASE_DIR/release.tar.gz" -C "\$RELEASE_DIR"
+          rm -f "\$RELEASE_DIR/release.tar.gz"
+          ln -sfn "\$DEPLOY_PATH/shared/.env" "\$RELEASE_DIR/.env"
+          ln -sfn "\$RELEASE_DIR" "\$DEPLOY_PATH/current"
+          cd "\$DEPLOY_PATH/current"
+          DEPLOY_ROOT="\$DEPLOY_PATH" bash scripts/deploy.sh
+          EOF

@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="panel">
+  <div class="client-head">
+    <div>
+      <a class="back-link" href="/admin">← Все клиенты</a>
+      <h1>{{ client.display_name }}</h1>
+      <div class="client-meta">
+        <span class="status status-{{ client.effective_status }}">{{ client.effective_status|status }}</span>
+        <span>{{ inbound_label }}</span>
+        <span>До {{ client.expires_at|datetime }}</span>
+        <span><code>{{ client.xui_email }}</code></span>
+      </div>
+    </div>
+    <form method="post" action="/admin/clients/{{ client.id }}/sync">
+      <button class="button button-secondary" type="submit">Обновить трафик</button>
+    </form>
+  </div>
+</section>
+
+<section class="detail-grid">
+  <div class="panel">
+    <div class="panel-head">
+      <h2>Happ-ссылка</h2>
+      <form method="post" action="/admin/clients/{{ client.id }}/reissue">
+        <button class="button button-secondary" type="submit">Перевыпустить</button>
+      </form>
+    </div>
+    {% if client.happ_link %}
+      <div class="link-box">
+        <textarea readonly id="happLink">{{ client.happ_link }}</textarea>
+        <div class="button-row">
+          <button class="button button-primary" type="button" onclick="navigator.clipboard.writeText(document.getElementById('happLink').value)">Копировать</button>
+          {% if share_url %}
+            <a class="button button-secondary" href="{{ share_url }}" target="_blank" rel="noopener">Отправить в Telegram</a>
+          {% endif %}
+        </div>
+      </div>
+      <div class="qr-wrap">
+        <img src="/admin/clients/{{ client.id }}/qr.svg" alt="QR-код Happ-подключения">
+      </div>
+    {% else %}
+      <div class="empty">Happ-ссылка еще не выпущена</div>
+    {% endif %}
+  </div>
+
+  <div class="panel">
+    <h2>Управление</h2>
+    <dl class="facts">
+      <div>
+        <dt>Создан</dt>
+        <dd>{{ client.created_at|datetime }}</dd>
+      </div>
+      <div>
+        <dt>Трафик</dt>
+        <dd>
+          {{ client.traffic_used_bytes|bytes }}
+          {% if client.traffic_limit_bytes %} / {{ client.traffic_limit_bytes|bytes }}{% endif %}
+        </dd>
+      </div>
+      <div>
+        <dt>Последняя синхронизация</dt>
+        <dd>{{ client.last_sync_at|datetime }}</dd>
+      </div>
+    </dl>
+
+    <form class="inline-form" method="post" action="/admin/clients/{{ client.id }}/extend">
+      <label>
+        Продлить на дней
+        <input name="extra_days" type="number" min="1" value="30" required>
+      </label>
+      <button class="button button-primary" type="submit">Продлить</button>
+    </form>
+
+    {% if client.effective_status != "blocked" %}
+      <form method="post" action="/admin/clients/{{ client.id }}/block">
+        <button class="button button-danger" type="submit">Заблокировать</button>
+      </form>
+    {% endif %}
+  </div>
+</section>
+{% endblock %}

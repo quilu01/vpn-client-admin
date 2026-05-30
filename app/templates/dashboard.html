@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="grid stats-grid" aria-label="Аналитика">
+  <div class="metric">
+    <span>Активные</span>
+    <strong>{{ stats.active }}</strong>
+  </div>
+  <div class="metric">
+    <span>Истекают за 7 дней</span>
+    <strong>{{ stats.expiring }}</strong>
+  </div>
+  <div class="metric">
+    <span>Заблокированы</span>
+    <strong>{{ stats.blocked }}</strong>
+  </div>
+  <div class="metric">
+    <span>Трафик</span>
+    <strong>{{ stats.total_traffic|bytes }}</strong>
+  </div>
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <h1>Создать подключение</h1>
+  </div>
+  <form class="create-grid" method="post" action="/admin/clients">
+    <label>
+      Имя клиента
+      <input name="display_name" placeholder="Например: Ivan Petrov" maxlength="160" required>
+    </label>
+    <fieldset class="server-picker">
+      <legend>Серверы</legend>
+      <div class="server-options">
+        {% for option_id, option_label in inbound_options %}
+          <label class="check-row">
+            <input type="checkbox" name="inbound_ids" value="{{ option_id }}" checked>
+            <span>{{ option_label }}</span>
+          </label>
+        {% endfor %}
+      </div>
+    </fieldset>
+    <label>
+      Срок, дней
+      <input name="duration_days" type="number" min="1" value="30" required>
+    </label>
+    <label>
+      Лимит, GB
+      <input name="traffic_limit_gb" type="number" min="0" value="0">
+    </label>
+    <button class="button button-primary" type="submit">Создать</button>
+  </form>
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <h1>Клиенты</h1>
+    <form class="search" method="get" action="/admin">
+      <input name="q" value="{{ q }}" placeholder="Поиск">
+      <button class="button button-secondary" type="submit">Найти</button>
+    </form>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Клиент</th>
+            <th>Сервер</th>
+            <th>Статус</th>
+          <th>Срок</th>
+          <th>Трафик</th>
+          <th>3x-ui email</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for client in clients %}
+          <tr>
+            <td>
+              <a class="row-title" href="/admin/clients/{{ client.id }}">{{ client.display_name }}</a>
+            </td>
+            <td>{{ inbound_label(client.inbound_id_list) }}</td>
+            <td><span class="status status-{{ client.effective_status }}">{{ client.effective_status|status }}</span></td>
+            <td>{{ client.expires_at|datetime }}</td>
+            <td>
+              {{ client.traffic_used_bytes|bytes }}
+              {% if client.traffic_limit_bytes %}<span class="muted">/ {{ client.traffic_limit_bytes|bytes }}</span>{% endif %}
+            </td>
+            <td><code>{{ client.xui_email }}</code></td>
+            <td class="actions-cell">
+              <a class="button button-secondary" href="/admin/clients/{{ client.id }}">Открыть</a>
+            </td>
+          </tr>
+        {% else %}
+          <tr>
+            <td colspan="7" class="empty">Клиентов пока нет</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}
